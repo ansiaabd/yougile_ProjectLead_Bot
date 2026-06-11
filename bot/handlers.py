@@ -536,7 +536,8 @@ async def setup_project_handler(update: Update, context: ContextTypes.DEFAULT_TY
 # ── Link email (привязать email к Telegram) ─────────────
 
 async def link_email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user = update.effective_user
+    user_id = user.id
     try:
         email = context.args[0].strip().lower()
     except (IndexError, ValueError):
@@ -549,6 +550,11 @@ async def link_email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if "@" not in email:
         await update.message.reply_text("❌ Некорректный email")
         return
+
+    # Ensure user is registered in local DB
+    existing = get_user(user_id)
+    if not existing:
+        register_user(user_id, user.username or "", user.full_name or "")
 
     yougile_users = yougile.get_users()
     match = next((u for u in yougile_users if u.get("email", "").lower() == email), None)

@@ -342,18 +342,27 @@ async def _finish_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if yougile_project_id:
         try:
             assigned_ids = []
+            assignee_warning = ""
             if assignee_id:
-                tg_user = get_user(assignee_id)
-                if tg_user:
-                    yid = get_yougile_user_id(assignee_id)
-                    if yid:
-                        assigned_ids.append(yid)
-                    else:
+                yid = get_yougile_user_id(assignee_id)
+                if yid:
+                    assigned_ids.append(yid)
+                elif creator_id and get_yougile_user_id(creator_id):
+                    assigned_ids.append(get_yougile_user_id(creator_id))
+                else:
+                    tg_user = get_user(assignee_id)
+                    if tg_user:
                         yougile_users = yougile.get_users()
                         email = f"{tg_user.get('username', '')}@t.me"
                         match = next((u for u in yougile_users if email in u.get("email", "")), None)
                         if match:
                             assigned_ids.append(match["id"])
+                    if not assigned_ids:
+                        assignee_warning = (
+                            "\n\n⚠️ <b>Исполнитель не назначен в Yougile.</b>\n"
+                            "Исполнителю нужно привязать аккаунт:\n"
+                            "<code>/link_email your@email.com</code>"
+                        )
 
             deadline_ms = None
             if deadline:
@@ -376,10 +385,10 @@ async def _finish_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning("Yougile create failed: %s", e)
 
     desc_text = f"📋 {description}" if description else ""
-    await update.message.reply_text(
-        TASK_ADDED.format(id=task_id, title=title, deadline=format_datetime_ru(deadline), assignee=assignee_raw, description=desc_text),
-        reply_markup=task_actions_keyboard(task_id),
-    )
+    msg = TASK_ADDED.format(id=task_id, title=title, deadline=format_datetime_ru(deadline), assignee=assignee_raw, description=desc_text)
+    if assignee_warning:
+        msg += assignee_warning
+    await update.message.reply_text(msg, reply_markup=task_actions_keyboard(task_id))
     await notify_assignee(context, task_id, title, format_datetime_ru(deadline), assignee_raw, assignee_id)
     context.user_data.clear()
     return ConversationHandler.END

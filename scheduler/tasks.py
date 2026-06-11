@@ -12,7 +12,7 @@ async def check_overdue(context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     rows = conn.execute(
-        "SELECT * FROM tasks WHERE status = 'active' AND deadline <= ?",
+        "SELECT * FROM tasks WHERE status = 'active' AND deadline != '' AND deadline <= ?",
         (now,),
     ).fetchall()
     conn.close()

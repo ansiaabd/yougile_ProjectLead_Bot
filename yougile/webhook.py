@@ -115,6 +115,11 @@ def _handle_task_created(task_id: str):
             tg_assignee_name = u.get("full_name") or u.get("username") or f"ID {u['user_id']}"
             break
 
+    # Skip if no Telegram-linked assignee found
+    if not tg_assignee_id:
+        logger.info("Yougile task %s skipped — no linked Telegram user among assignees", task_id)
+        return
+
     deadline_str = ""
     if yg_deadline_ms:
         try:
@@ -163,10 +168,7 @@ def _handle_task_created(task_id: str):
         f"{desc_text}"
     ).strip()
 
-    targets = set()
-    if tg_assignee_id:
-        targets.add(tg_assignee_id)
-    targets.add(ADMIN_ID)
+    targets = {tg_assignee_id, ADMIN_ID}
     for tid in targets:
         notify_chat(tid, text)
 

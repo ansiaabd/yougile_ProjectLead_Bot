@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+bot.log
+*.pid
+tasks.db
+tasks.db-shm
+tasks.db-wal
+.env
+yougile/.env

@@ -171,8 +171,12 @@ class YougileClient:
             body["projectId"] = project_id
         return self._request("POST", "webhooks", body)
 
-    def list_webhooks(self) -> list:
-        return self._request("GET", "webhooks")
+    def list_webhooks(self) -> list[dict]:
+        data = self._request("GET", "webhooks")
+        return data if isinstance(data, list) else data.get("content", [])
+
+    def delete_webhook(self, webhook_id: str):
+        self._request("PUT", f"webhooks/{webhook_id}", {"deleted": True})
 
     # ── High-level helpers ──
 

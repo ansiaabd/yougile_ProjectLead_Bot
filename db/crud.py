@@ -129,6 +129,15 @@ def get_yougile_user_id(tg_user_id: int) -> str:
     return row["yougile_user_id"] if row and row["yougile_user_id"] else ""
 
 
+def get_user_by_yougile_id(yougile_user_id: str) -> Optional[dict]:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM users WHERE yougile_user_id = ?", (yougile_user_id,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 # ── Tasks ────────────────────────────────────────────────
 
 def add_task(

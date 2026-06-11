@@ -187,7 +187,11 @@ async def project_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
-    if data.startswith("project_"):
+    if data == "project_none":
+        context.user_data["yougile_project_id"] = ""
+        context.user_data["yougile_project_title"] = ""
+        await query.edit_message_text("📄 Локальная задача (без Yougile)", parse_mode="HTML")
+    elif data.startswith("project_"):
         project_id = data[len("project_"):]
         project = next((p for p in _yougile_projects_cache if p["id"] == project_id), None)
         if project:
@@ -494,6 +498,14 @@ async def setup_webhooks_handler(update: Update, context: ContextTypes.DEFAULT_T
             return
         webhook_url = f"{base_url.rstrip('/')}/webhook"
         yougile_client = YougileClient()
+
+        # Delete old webhooks
+        for h in yougile_client.list_webhooks():
+            try:
+                yougile_client.delete_webhook(h["id"])
+            except YougileError:
+                pass
+
         events = ["task-created", "task-moved", "task-renamed", "task-updated"]
         created = 0
         for event in events:

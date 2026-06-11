@@ -256,10 +256,22 @@ async def add_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     content, deadline = _split_deadline(text)
     if content and deadline:
-        context.user_data["title"] = content
+        slash_idx = content.find("/")
+        if slash_idx != -1:
+            context.user_data["title"] = content[:slash_idx].strip()
+            context.user_data["description"] = content[slash_idx+1:].strip()
+        else:
+            context.user_data["title"] = content
+            context.user_data["description"] = ""
         context.user_data["deadline"] = deadline
-        context.user_data["description"] = ""
         return await _finish_task(update, context)
+
+    slash_idx = text.find("/")
+    if slash_idx != -1:
+        context.user_data["title"] = text[:slash_idx].strip()
+        context.user_data["description"] = text[slash_idx+1:].strip()
+        await update.message.reply_text(ASK_DEADLINE)
+        return DEADLINE
 
     context.user_data["title"] = text
     await update.message.reply_text(ASK_DESCRIPTION)

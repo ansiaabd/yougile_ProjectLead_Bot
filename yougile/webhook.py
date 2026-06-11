@@ -27,12 +27,20 @@ def set_app(app):
         _loop_ref = None
 
 
-def notify_chat(chat_id: int, text: str):
-    """Schedule a notification on the main event loop."""
+from bot.keyboards import task_actions_keyboard
+
+
+def notify_chat(chat_id: int, text: str, task_id: int = 0):
+    """Schedule a notification on the main event loop.
+    If task_id is given, appends an inline action keyboard."""
     if _app_ref and _loop_ref:
         async def _send():
             try:
-                await _app_ref.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+                reply_markup = task_actions_keyboard(task_id, "active") if task_id else None
+                await _app_ref.bot.send_message(
+                    chat_id=chat_id, text=text,
+                    parse_mode="HTML", reply_markup=reply_markup,
+                )
             except Exception as e:
                 logger.warning("Failed to notify %s: %s", chat_id, e)
         asyncio.run_coroutine_threadsafe(_send(), _loop_ref)
@@ -170,7 +178,7 @@ def _handle_task_created(task_id: str):
 
     targets = {tg_assignee_id, ADMIN_ID}
     for tid in targets:
-        notify_chat(tid, text)
+        notify_chat(tid, text, task_id=local_id)
 
 
 class WebhookHandler(BaseHTTPRequestHandler):

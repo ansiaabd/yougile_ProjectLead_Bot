@@ -1,13 +1,13 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def task_actions_keyboard(task_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✅ Выполнено", callback_data=f"done_{task_id}"),
-            InlineKeyboardButton("🗑 Удалить", callback_data=f"delete_{task_id}"),
-        ]
-    ])
+def task_actions_keyboard(task_id: int, status: str = "") -> InlineKeyboardMarkup:
+    buttons = []
+    if status == "active":
+        buttons.append(InlineKeyboardButton("▶️ Взять в работу", callback_data=f"take_{task_id}"))
+    buttons.append(InlineKeyboardButton("✅ Выполнено", callback_data=f"done_{task_id}"))
+    buttons.append(InlineKeyboardButton("🗑 Удалить", callback_data=f"delete_{task_id}"))
+    return InlineKeyboardMarkup([buttons])
 
 
 def approval_keyboard(task_id: int) -> InlineKeyboardMarkup:
@@ -51,7 +51,9 @@ def user_picker_keyboard(users: list[dict], current_user_id: int) -> InlineKeybo
 
 
 def project_picker_keyboard(projects: list[dict]) -> InlineKeyboardMarkup:
-    keyboard = []
+    keyboard = [
+        [InlineKeyboardButton("📄 Без проекта (локальная)", callback_data="project_none")],
+    ]
     for p in projects:
         title = p.get("title", "Без названия")
         keyboard.append([InlineKeyboardButton(title, callback_data=f"project_{p['id']}")])

@@ -158,7 +158,7 @@ async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         desc_text = f"📋 {description}" if description else ""
         await update.message.reply_text(
             TASK_ADDED.format(id=task_id, title=title, deadline=format_datetime_ru(deadline), assignee=assignee_raw, description=desc_text),
-            reply_markup=task_actions_keyboard(task_id),
+            reply_markup=task_actions_keyboard(task_id, "active"),
         )
         await notify_assignee(context, task_id, title, format_datetime_ru(deadline), assignee_raw, assignee_id)
         return ConversationHandler.END
@@ -392,7 +392,7 @@ async def _finish_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = TASK_ADDED.format(id=task_id, title=title, deadline=format_datetime_ru(deadline), assignee=assignee_raw, description=desc_text)
     if assignee_warning:
         msg += assignee_warning
-    await update.message.reply_text(msg, reply_markup=task_actions_keyboard(task_id))
+    await update.message.reply_text(msg, reply_markup=task_actions_keyboard(task_id, "active"))
     await notify_assignee(context, task_id, title, format_datetime_ru(deadline), assignee_raw, assignee_id)
     context.user_data.clear()
     return ConversationHandler.END
@@ -588,26 +588,31 @@ async def link_email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # ── Take task (взять в работу) ──────────────────────────
 
+async def _take_task(update: Update, task_id: int) -> bool:
+    """Shared take-logic. Returns True on success."""
+    task = get_task(task_id)
+    if not task:
+        await update.message.reply_text(TASK_NOT_FOUND.format(id=task_id))
+        return False
+    user_id = update.effective_user.id
+    if task.get("assignee_id") and task["assignee_id"] != user_id:
+        await update.message.reply_text("❌ Вы не являетесь исполнителем этой задачи.")
+        return False
+    if task["status"] != "active":
+        await update.message.reply_text("❌ Можно взять в работу только активную задачу.")
+        return False
+    _sync_yougile_take(task)
+    await update.message.reply_text(f"🔄 Задача #{task_id} <b>{task['title']}</b> — взята в работу!", parse_mode="HTML")
+    return True
+
+
 async def take_task_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         task_id = int(context.args[0])
     except (IndexError, ValueError):
         await update.message.reply_text("❌ Укажите ID задачи: /take <id>")
         return
-    task = get_task(task_id)
-    if not task:
-        await update.message.reply_text(TASK_NOT_FOUND.format(id=task_id))
-        return
-    user_id = update.effective_user.id
-    if task.get("assignee_id") and task["assignee_id"] != user_id:
-        await update.message.reply_text("❌ Вы не являетесь исполнителем этой задачи.")
-        return
-    if task["status"] != "active":
-        await update.message.reply_text("❌ Можно взять в работу только активную задачу.")
-        return
-    update_task_field(task_id, "status", "active")
-    _sync_yougile_take(task)
-    await update.message.reply_text(f"🔄 Задача #{task_id} <b>{task['title']}</b> — взята в работу!", parse_mode="HTML")
+    await _take_task(update, task_id)
 
 
 # ── List ─────────────────────────────────────────────────
@@ -972,11 +977,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = update.effective_user.id
 
-    if data.startswith("done_comment_"):
-        task_id = int(data.split("_")[2])
-        context.user_data["awaiting_done_comment"] = task_id
-        await query.edit_message_text(DONE_AWAITING_COMMENT)
-    elif data.startswith("done_file_"):
+    if data.startswith("take_"):
+        task_id = int(data.split("_")[1])
+        task = get_task(task_id)
+        if not task:
+            await query.edit_message_text(TASK_NOT_FOUND.format(id=task_id))
+            return
+        if task.get("assignee_id") and task["assignee_id"] != user_id:
+            await query.answer("❌ Вы не являетесь исполнителем этой задачи.", show_alert=True)
+            return
+        if task["status"] != "active":
+            await query.answer("❌ Задача уже в работе или выполнена.", show_alert=True)
+            return
+        _sync_yougile_take(task)
+        await query.edit_message_text(f"🔄 Задача #{task_id} <b>{task['title']}</b> — взята в работу!", parse_mode="HTML")
+        return
+    elif data.startswith("done_comment_"):
         task_id = int(data.split("_")[2])
         context.user_data["awaiting_done_file"] = task_id
         await query.edit_message_text(DONE_AWAITING_FILE)

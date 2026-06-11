@@ -130,12 +130,15 @@ class YougileClient:
         title: str,
         description: str = "",
         assigned: Optional[list[str]] = None,
+        deadline_ms: Optional[int] = None,
     ) -> str:
         body = {"title": title, "columnId": column_id}
         if description:
             body["description"] = description
         if assigned:
             body["assigned"] = assigned
+        if deadline_ms:
+            body["deadline"] = {"deadline": deadline_ms, "withTime": True}
         result = self._request("POST", "tasks", body)
         return result["id"]
 
@@ -179,6 +182,7 @@ class YougileClient:
         title: str,
         description: str = "",
         assignee_yougile_ids: Optional[list[str]] = None,
+        deadline_ms: Optional[int] = None,
     ) -> str:
         mapping = self.get_column_mapping(project_id)
         zadachi = mapping.get("Задачи")
@@ -192,6 +196,7 @@ class YougileClient:
             title=title,
             description=description,
             assigned=assignee_yougile_ids,
+            deadline_ms=deadline_ms,
         )
 
     def move_to_column(self, task_id: str, project_id: str, column_name: str):

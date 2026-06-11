@@ -1,5 +1,6 @@
 import re
 import logging
+from datetime import datetime
 from telegram import Update
 
 logger = logging.getLogger(__name__)
@@ -337,11 +338,20 @@ async def _finish_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if match:
                         assigned_ids.append(match["id"])
 
+            deadline_ms = None
+            if deadline:
+                try:
+                    dt = datetime.strptime(deadline, "%Y-%m-%d %H:%M")
+                    deadline_ms = int(dt.timestamp() * 1000)
+                except ValueError:
+                    pass
+
             yougile_task_id = yougile.create_task_in_project(
                 project_id=yougile_project_id,
                 title=title,
                 description=description,
                 assignee_yougile_ids=assigned_ids if assigned_ids else None,
+                deadline_ms=deadline_ms,
             )
             update_task_field(task_id, "yougile_project_id", yougile_project_id)
             update_task_field(task_id, "yougile_task_id", yougile_task_id)

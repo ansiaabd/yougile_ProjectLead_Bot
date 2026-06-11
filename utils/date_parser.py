@@ -19,6 +19,25 @@ DAY_WORDS = {"послезавтра": 2, "завтра": 1, "сегодня": 0
 def _try_parse(text: str) -> Optional[datetime]:
     text = text.strip().lower()
 
+    # "день в часы" (напр. "12 в 4") — ДО month patterns, т.к. "в" похоже на месяц
+    m = re.match(r"(\d{1,2})\s+в\s+(\d{1,2})(?::(\d{2}))?\s*$", text)
+    if m:
+        day, hour, minute = int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
+        now = datetime.now()
+        for mo in range(12):
+            month = now.month + mo
+            y = now.year
+            if month > 12:
+                month -= 12
+                y += 1
+            try:
+                dt = datetime(y, month, day, hour, minute)
+                if dt >= now:
+                    return dt
+            except ValueError:
+                continue
+        return None
+
     # "день месяц_рус год часы:минуты" / "день месяц_рус в часы часов"
     m = re.match(
         r"(\d{1,2})\s+([а-я]+)\s*(?:(\d{4}))?\s*(?:в\s*)?(\d{1,2})(?::(\d{2}))?\s*(?:часов|ч|час)?\s*$",

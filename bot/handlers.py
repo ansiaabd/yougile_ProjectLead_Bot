@@ -381,7 +381,7 @@ def _sync_yougile_move(task: dict, board_name: str):
     pid = task.get("yougile_project_id", "")
     if yid and pid:
         try:
-            yougile.move_to_board(yid, pid, board_name)
+            yougile.move_to_column(yid, pid, board_name)
         except YougileError as e:
             logger.warning("Yougile move '%s' failed for task %s: %s", board_name, task["id"], e)
 
@@ -483,13 +483,14 @@ async def setup_project_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text(ADMIN_ONLY)
         return
     try:
-        tasks_text = "📁 Создаю доски для проекта...\n"
+        tasks_text = "📁 Настраиваю колонки для проектов...\n"
         if not _yougile_projects_cache:
             _yougile_projects_cache.extend(yougile.get_projects())
 
         for p in _yougile_projects_cache:
-            mapping = yougile.ensure_project_boards(p["id"])
-            tasks_text += f"\n<b>{p['title']}</b>: {' ✅ '.join(mapping.keys())}\n"
+            mapping = yougile.ensure_project_columns(p["id"])
+            cols = ', '.join(mapping.keys())
+            tasks_text += f"\n<b>{p['title']}</b>: {cols}\n"
 
         await update.message.reply_text(tasks_text, parse_mode="HTML")
     except Exception as e:

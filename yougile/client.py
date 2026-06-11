@@ -7,7 +7,7 @@ import httpx
 from yougile.config import YOUGILE_API_KEY
 
 API_BASE = "https://yougile.com/api-v2"
-BOARD_NAMES = ["Задачи", "В работе", "На проверке", "Готово"]
+COLUMN_NAMES = ["Задачи", "В работе", "На проверке", "Готово"]
 
 logger = logging.getLogger(__name__)
 
@@ -79,29 +79,42 @@ class YougileClient:
     def create_column(self, board_id: str, title: str) -> dict:
         return self._request("POST", "columns", {"title": title, "boardId": board_id})
 
-    def ensure_project_boards(self, project_id: str, board_names: Optional[list[str]] = None) -> dict[str, dict]:
-        existing = self.get_board_mapping(project_id)
-        names = board_names or BOARD_NAMES
-        for name in names:
+    def delete_board(self, board_id: str):
+        self._request("PUT", f"boards/{board_id}", {"deleted": True})
+
+    def delete_column(self, column_id: str):
+        self._request("PUT", f"columns/{column_id}", {"deleted": True})
+
+    # ── Column mapping (single board with 4 columns) ──
+
+    def get_column_mapping(self, project_id: str) -> dict[str, dict]:
+        boards = self.get_boards_by_project(project_id)
+        if not boards:
+            return {}
+        board = boards[0]
+        cols = self.get_columns(board["id"])
+        mapping = {}
+        for c in cols:
+            title = c.get("title", "")
+            if title in COLUMN_NAMES:
+                mapping[title] = {"board_id": board["id"], "column_id": c["id"]}
+        return mapping
+
+    def ensure_project_columns(self, project_id: str, board_title: str = "Доска") -> dict[str, dict]:
+        boards = self.get_boards_by_project(project_id)
+
+        if not boards:
+            board = self.create_board(project_id, board_title)
+        else:
+            board = boards[0]
+
+        existing = self.get_column_mapping(project_id)
+        for name in COLUMN_NAMES:
             if name not in existing:
-                board = self.create_board(project_id, name)
                 col = self.create_column(board["id"], name)
                 existing[name] = {"board_id": board["id"], "column_id": col["id"]}
-                logger.info("Created board '%s' in project %s", name, project_id)
+                logger.info("Created column '%s' on board '%s'", name, board["title"])
         return existing
-
-    # ── Board mapping ──
-
-    def get_board_mapping(self, project_id: str) -> dict[str, dict]:
-        boards = self.get_boards_by_project(project_id)
-        mapping = {}
-        for b in boards:
-            title = b.get("title", "")
-            if title in BOARD_NAMES:
-                col = self.get_first_column(b["id"])
-                if col:
-                    mapping[title] = {"board_id": b["id"], "column_id": col["id"]}
-        return mapping
 
     # ── Users ──
 
@@ -167,12 +180,12 @@ class YougileClient:
         description: str = "",
         assignee_yougile_ids: Optional[list[str]] = None,
     ) -> str:
-        mapping = self.get_board_mapping(project_id)
+        mapping = self.get_column_mapping(project_id)
         zadachi = mapping.get("Задачи")
         if not zadachi:
             available = list(mapping.keys())
             raise YougileError(
-                f"Не найдена доска «Задачи» в проекте. Доступные доски: {', '.join(available) or 'нет'}"
+                f"Не найдена колонка «Задачи» в проекте. Доступные колонки: {', '.join(available) or 'нет'}"
             )
         return self.create_task(
             column_id=zadachi["column_id"],
@@ -181,12 +194,13 @@ class YougileClient:
             assigned=assignee_yougile_ids,
         )
 
-    def move_to_board(self, task_id: str, project_id: str, board_name: str):
-        mapping = self.get_board_mapping(project_id)
-        board = mapping.get(board_name)
-        if not board:
-            raise YougileError(f"Не найдена доска «{board_name}» в проекте")
-        self.move_task(task_id, board["column_id"])
+    def move_to_column(self, task_id: str, project_id: str, column_name: str):
+        mapping = self.get_column_mapping(project_id)
+        col = mapping.get(column_name)
+        if not col:
+            available = list(mapping.keys())
+            raise YougileError(f"Не найдена колонка «{column_name}» в проекте. Доступные: {', '.join(available)}")
+        self.move_task(task_id, col["column_id"])
 
     def add_done_comment(self, task_id: str, comment: str = "", telegram_username: str = ""):
         prefix = f"@{telegram_username}: " if telegram_username else ""

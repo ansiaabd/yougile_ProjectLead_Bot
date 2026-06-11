@@ -22,6 +22,9 @@ def _migrate(conn):
     }
     if "role" not in existing_cols:
         conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+    if "yougile_user_id" not in existing_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN yougile_user_id TEXT DEFAULT ''")
+        conn.execute("ALTER TABLE users ADD COLUMN email TEXT DEFAULT ''")
 
     existing_cols = {
         r["name"]
@@ -105,6 +108,25 @@ def delete_user(user_id: int) -> bool:
     deleted = cur.rowcount > 0
     conn.close()
     return deleted
+
+
+def set_user_yougile(user_id: int, yougile_user_id: str, email: str):
+    conn = get_connection()
+    conn.execute(
+        "UPDATE users SET yougile_user_id = ?, email = ? WHERE user_id = ?",
+        (yougile_user_id, email, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_yougile_user_id(tg_user_id: int) -> str:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT yougile_user_id FROM users WHERE user_id = ?", (tg_user_id,)
+    ).fetchone()
+    conn.close()
+    return row["yougile_user_id"] if row and row["yougile_user_id"] else ""
 
 
 # ── Tasks ────────────────────────────────────────────────

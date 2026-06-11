@@ -18,6 +18,7 @@ from db.crud import (
     list_overdue, list_pending_approval, register_user, get_user_by_username,
     get_user, get_user_role, set_user_role, list_users, delete_user,
     update_task_field, get_task_by_yougile_id,
+    set_user_yougile, get_yougile_user_id,
 )
 from bot.messages import (
     HELP_TEXT, TASK_ADDED, TASK_DONE, TASK_NOT_FOUND, TASK_DELETED,
@@ -340,15 +341,19 @@ async def _finish_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     yougile_task_id = ""
     if yougile_project_id:
         try:
-            yougile_users = yougile.get_users()
             assigned_ids = []
             if assignee_id:
                 tg_user = get_user(assignee_id)
                 if tg_user:
-                    email = f"{tg_user.get('username', '')}@t.me"
-                    match = next((u for u in yougile_users if email in u.get("email", "")), None)
-                    if match:
-                        assigned_ids.append(match["id"])
+                    yid = get_yougile_user_id(assignee_id)
+                    if yid:
+                        assigned_ids.append(yid)
+                    else:
+                        yougile_users = yougile.get_users()
+                        email = f"{tg_user.get('username', '')}@t.me"
+                        match = next((u for u in yougile_users if email in u.get("email", "")), None)
+                        if match:
+                            assigned_ids.append(match["id"])
 
             deadline_ms = None
             if deadline:
@@ -517,6 +522,41 @@ async def setup_project_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text(tasks_text, parse_mode="HTML")
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка: {e}")
+
+
+# ── Link email (привязать email к Telegram) ─────────────
+
+async def link_email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    try:
+        email = context.args[0].strip().lower()
+    except (IndexError, ValueError):
+        await update.message.reply_text(
+            "❌ Укажите email: /link_email you@example.com\n"
+            "Email должен совпадать с email в Yougile."
+        )
+        return
+
+    if "@" not in email:
+        await update.message.reply_text("❌ Некорректный email")
+        return
+
+    yougile_users = yougile.get_users()
+    match = next((u for u in yougile_users if u.get("email", "").lower() == email), None)
+    if not match:
+        await update.message.reply_text(
+            f"❌ Пользователь с email <b>{email}</b> не найден в Yougile.\n"
+            "Убедитесь, что вы используете тот же email, что в вашем аккаунте Yougile.",
+            parse_mode="HTML",
+        )
+        return
+
+    set_user_yougile(user_id, match["id"], email)
+    await update.message.reply_text(
+        f"✅ Email <b>{email}</b> привязан к вашему Telegram аккаунту!\n"
+        f"Теперь при назначении вас исполнителем задачи, бот укажет вас в Yougile.",
+        parse_mode="HTML",
+    )
 
 
 # ── Take task (взять в работу) ──────────────────────────
@@ -1048,6 +1088,7 @@ def get_handlers():
         CommandHandler("demote", demote_handler),
         CommandHandler("setup_webhooks", setup_webhooks_handler),
         CommandHandler("setup_project", setup_project_handler),
+        CommandHandler("link_email", link_email_handler),
         MessageHandler(filters.Regex(r"(?i)^(выполнено|сделано|готово)$") & ~filters.COMMAND, done_natural),
         MessageHandler(filters.Regex(r"^\d+$") & ~filters.COMMAND, done_natural_number),
         MessageHandler(filters.TEXT & ~filters.COMMAND, done_comment_handler),

@@ -668,9 +668,17 @@ async def done_task_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_id = update.effective_user.id
-    role = _get_role(user_id)
 
-    if role == "admin" or _can_approve(user_id, task):
+    if user_id == task.get("assignee_id"):
+        update_task_status(task_id, "pending_approval")
+        await update.message.reply_text(
+            DONE_SENT_TO_ADMIN + "\n\n" + DONE_ACTION_HINT,
+            reply_markup=done_actions_keyboard(task_id),
+        )
+        task_updated = get_task(task_id)
+        if task_updated:
+            _sync_yougile_review(task_updated, update.effective_user)
+    elif _can_approve(user_id, task):
         update_task_status(task_id, "done")
         await update.message.reply_text(TASK_DONE.format(id=task_id))
         _sync_yougile_done(task)
@@ -1009,7 +1017,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not task:
             await query.edit_message_text(TASK_NOT_FOUND.format(id=task_id))
             return
-        if _can_approve(user_id, task):
+        if user_id == task.get("assignee_id"):
+            update_task_status(task_id, "pending_approval")
+            await query.edit_message_text(
+                DONE_SENT_TO_ADMIN + "\n\n" + DONE_ACTION_HINT,
+                reply_markup=done_actions_keyboard(task_id),
+            )
+            task_updated = get_task(task_id)
+            if task_updated:
+                _sync_yougile_review(task_updated, update.effective_user)
+        elif _can_approve(user_id, task):
             update_task_status(task_id, "done")
             await query.edit_message_text(TASK_DONE.format(id=task_id))
             _sync_yougile_done(task)

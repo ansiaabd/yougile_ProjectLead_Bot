@@ -39,6 +39,8 @@ def _migrate(conn):
     if "yougile_project_id" not in existing_cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN yougile_project_id TEXT DEFAULT ''")
         conn.execute("ALTER TABLE tasks ADD COLUMN yougile_task_id TEXT DEFAULT ''")
+    if "project_name" not in existing_cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN project_name TEXT DEFAULT ''")
 
 
 # ── Users ────────────────────────────────────────────────
@@ -147,11 +149,12 @@ def add_task(
     description: str = "",
     assignee_id: Optional[int] = None,
     created_by: Optional[int] = None,
+    project_name: str = "",
 ) -> int:
     conn = get_connection()
     cur = conn.execute(
-        "INSERT INTO tasks (title, description, assignee, assignee_id, deadline, created_by) VALUES (?, ?, ?, ?, ?, ?)",
-        (title, description, assignee, assignee_id, deadline, created_by),
+        "INSERT INTO tasks (title, description, assignee, assignee_id, deadline, created_by, project_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (title, description, assignee, assignee_id, deadline, created_by, project_name),
     )
     conn.commit()
     task_id = cur.lastrowid

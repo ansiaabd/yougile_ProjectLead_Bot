@@ -63,14 +63,14 @@ def _split_deadline(text: str):
     return None, None
 
 
-async def notify_assignee(context: ContextTypes.DEFAULT_TYPE, task_id: int, title: str, deadline: str, assignee: str, assignee_id: int):
+async def notify_assignee(context: ContextTypes.DEFAULT_TYPE, task_id: int, title: str, deadline: str, assignee: str, assignee_id: int, description: str = ""):
     if not assignee_id:
         return
-    text = NEW_TASK_NOTIFICATION.format(id=task_id, title=title, deadline=deadline, assignee=assignee)
+    text = NEW_TASK_NOTIFICATION.format(id=task_id, title=title, description=description or "—", deadline=deadline, assignee=assignee)
     try:
         await context.bot.send_message(
             chat_id=assignee_id, text=text, parse_mode="HTML",
-            reply_markup=task_actions_keyboard(task_id, "active"),
+            reply_markup=task_actions_keyboard(task_id, "active", viewer_id=assignee_id, assignee_id=assignee_id),
         )
     except Exception:
         pass
@@ -161,9 +161,9 @@ async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         desc_text = f"📋 {description}" if description else ""
         await update.message.reply_text(
             TASK_ADDED.format(id=task_id, title=title, deadline=format_datetime_ru(deadline), assignee=assignee_raw, description=desc_text),
-            reply_markup=task_actions_keyboard(task_id, "active"),
+            reply_markup=task_actions_keyboard(task_id, "active", viewer_id=creator_id, assignee_id=assignee_id or 0),
         )
-        await notify_assignee(context, task_id, title, format_datetime_ru(deadline), assignee_raw, assignee_id)
+        await notify_assignee(context, task_id, title, format_datetime_ru(deadline), assignee_raw, assignee_id, description)
         return ConversationHandler.END
 
     context.user_data.clear()
@@ -226,14 +226,23 @@ async def _ask_assignee(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ASSIGNEE
 
 
+def _title_prompt(context: ContextTypes.DEFAULT_TYPE) -> str:
+    project_title = context.user_data.get("yougile_project_title", "")
+    if project_title:
+        return f"📝 Введите название задачи\n<b>{project_title}</b>"
+    return ASK_TITLE
+
+
 async def assignee_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_done_id"):
         return await _handle_awaiting_done(update, context)
+    if re.match(r"(?i)^(выполнено|сделано|готово)$", update.message.text.strip()):
+        return await done_natural(update, context)
     assignee_raw = update.message.text.strip()
     user_data = get_user_by_username(assignee_raw)
     context.user_data["assignee_id"] = user_data["user_id"] if user_data else None
     context.user_data["assignee_raw"] = assignee_raw
-    await update.message.reply_text(ASK_TITLE)
+    await update.message.reply_text(_title_prompt(context), parse_mode="HTML")
     return TITLE
 
 
@@ -254,35 +263,44 @@ async def assignee_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["assignee_raw"] = u.get("full_name") or u.get("username") or f"ID {uid}"
 
     await query.edit_message_text(f"✅ Исполнитель: {context.user_data['assignee_raw']}")
-    await query.message.reply_text(ASK_TITLE)
+    await query.message.reply_text(_title_prompt(context), parse_mode="HTML")
     return TITLE
+
+
+def _prepend_project(title: str, context: ContextTypes.DEFAULT_TYPE) -> str:
+    project_title = context.user_data.get("yougile_project_title", "")
+    return f"{project_title} {title}" if project_title else title
 
 
 async def add_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_done_id"):
         return await _handle_awaiting_done(update, context)
+    if re.match(r"(?i)^(выполнено|сделано|готово)$", update.message.text.strip()):
+        return await done_natural(update, context)
     text = update.message.text.strip()
 
     content, deadline = _split_deadline(text)
     if content and deadline:
         slash_idx = content.find("/")
         if slash_idx != -1:
-            context.user_data["title"] = content[:slash_idx].strip()
+            title = content[:slash_idx].strip()
             context.user_data["description"] = content[slash_idx+1:].strip()
         else:
-            context.user_data["title"] = content
+            title = content
             context.user_data["description"] = ""
+        context.user_data["title"] = _prepend_project(title, context)
         context.user_data["deadline"] = deadline
         return await _finish_task(update, context)
 
     slash_idx = text.find("/")
     if slash_idx != -1:
-        context.user_data["title"] = text[:slash_idx].strip()
+        title = text[:slash_idx].strip()
+        context.user_data["title"] = _prepend_project(title, context)
         context.user_data["description"] = text[slash_idx+1:].strip()
         await update.message.reply_text(ASK_DEADLINE)
         return DEADLINE
 
-    context.user_data["title"] = text
+    context.user_data["title"] = _prepend_project(text, context)
     await update.message.reply_text(ASK_DESCRIPTION)
     return DESCRIPTION
 
@@ -297,6 +315,8 @@ async def skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_done_id"):
         return await _handle_awaiting_done(update, context)
+    if re.match(r"(?i)^(выполнено|сделано|готово)$", update.message.text.strip()):
+        return await done_natural(update, context)
     text = update.message.text.strip()
 
     content, deadline = _split_deadline(text)
@@ -344,12 +364,19 @@ async def _finish_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     creator_id = update.effective_user.id
     yougile_project_id = context.user_data.get("yougile_project_id", "")
 
-    task_id = add_task(title, assignee_raw, deadline, description, assignee_id, creator_id)
+    project_title = context.user_data.get("yougile_project_title", "")
+    task_id = add_task(
+        title, assignee_raw, deadline, description,
+        assignee_id, creator_id,
+        project_name=project_title,
+    )
 
     # Create task in Yougile
     yougile_task_id = ""
     if yougile_project_id:
         try:
+            # Ensure columns exist before creating task
+            yougile.ensure_project_columns(yougile_project_id)
             assigned_ids = []
             assignee_warning = ""
             if assignee_id:
@@ -381,9 +408,10 @@ async def _finish_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except ValueError:
                     pass
 
+            yg_title = f"{title} #{task_id}" if "#" not in title else title
             yougile_task_id = yougile.create_task_in_project(
                 project_id=yougile_project_id,
-                title=title,
+                title=yg_title,
                 description=description,
                 assignee_yougile_ids=assigned_ids if assigned_ids else None,
                 deadline_ms=deadline_ms,
@@ -392,18 +420,21 @@ async def _finish_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update_task_field(task_id, "yougile_task_id", yougile_task_id)
         except YougileError as e:
             logger.warning("Yougile create failed: %s", e)
+            assignee_warning = (assignee_warning or "") + f"\n\n⚠️ <b>Ошибка Yougile:</b> {e}"
 
     desc_text = f"📋 {description}" if description else ""
     msg = TASK_ADDED.format(id=task_id, title=title, deadline=format_datetime_ru(deadline), assignee=assignee_raw, description=desc_text)
     if assignee_warning:
         msg += assignee_warning
-    await update.message.reply_text(msg, reply_markup=task_actions_keyboard(task_id, "active"))
-    await notify_assignee(context, task_id, title, format_datetime_ru(deadline), assignee_raw, assignee_id)
+    await update.message.reply_text(msg, reply_markup=task_actions_keyboard(task_id, "active", viewer_id=creator_id, assignee_id=assignee_id or 0))
+    await notify_assignee(context, task_id, title, format_datetime_ru(deadline), assignee_raw, assignee_id, description)
     context.user_data.clear()
     return ConversationHandler.END
 
 
 async def add_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if re.match(r"(?i)^(выполнено|сделано|готово)$", update.message.text.strip()):
+        return await done_natural(update, context)
     deadline_raw = update.message.text.strip()
     deadline = parse_deadline(deadline_raw)
     if not deadline:
@@ -556,8 +587,13 @@ async def create_project_handler(update: Update, context: ContextTypes.DEFAULT_T
         return
     name = ' '.join(context.args).strip()
     if not name:
-        await update.message.reply_text("❌ Укажите название: /create_project Название проекта")
+        context.user_data["awaiting_project_name"] = True
+        await update.message.reply_text("📁 Напишите название проекта:")
         return
+    await _create_project_internal(update, name)
+
+
+async def _create_project_internal(update: Update, name: str):
     try:
         admin_yid = get_yougile_user_id(update.effective_user.id)
         project_kwargs = {'title': name}
@@ -666,18 +702,29 @@ async def list_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(NO_TASKS)
         return
 
+    import html as html_mod
     lines = []
     for t in tasks:
         status_icon = "🟢" if t["status"] == "active" else "🔴"
-        desc = f" - {t['description']}" if t["description"] else ""
+        desc_clean = html_mod.escape(t["description"]) if t["description"] else ""
+        desc = f" - {desc_clean}" if desc_clean else ""
         lines.append(
-            f"{status_icon} #{t['id']} <b>{t['title']}</b>{desc}\n"
-            f"   ⏰ {t['deadline']} | 👤 {t['assignee']}"
+            f"{status_icon} #{t['id']} <b>{html_mod.escape(t['title'])}</b>{desc}\n"
+            f"   ⏰ {t['deadline']} | 👤 {html_mod.escape(t['assignee'])}"
         )
 
-    await update.message.reply_text(
-        "\n\n".join(lines), parse_mode="HTML",
-    )
+    full = "\n\n".join(lines)
+    if len(full) <= 4000:
+        await update.message.reply_text(full, parse_mode="HTML")
+    else:
+        chunk = ""
+        for line in lines:
+            if len(chunk) + len(line) + 2 > 4000:
+                await update.message.reply_text(chunk.strip(), parse_mode="HTML")
+                chunk = ""
+            chunk += line + "\n\n"
+        if chunk.strip():
+            await update.message.reply_text(chunk.strip(), parse_mode="HTML")
 
 
 # ── Done (with approval) ─────────────────────────────────
@@ -712,6 +759,54 @@ async def done_task_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(TASK_DONE.format(id=task_id))
         context.user_data["awaiting_done_comment"] = task_id
         await update.message.reply_text(DONE_AWAITING_COMMENT)
+
+
+# ── Reschedule ────────────────────────────────────
+
+async def reschedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        task_id = int(context.args[0])
+    except (IndexError, ValueError):
+        await update.message.reply_text("❌ Использование: /reschedule <id> <новый срок>\nНапример: /reschedule 42 завтра 18:00")
+        return
+
+    task = get_task(task_id)
+    if not task:
+        await update.message.reply_text(TASK_NOT_FOUND.format(id=task_id))
+        return
+
+    if len(context.args) >= 2:
+        deadline_raw = " ".join(context.args[1:])
+        deadline = parse_deadline(deadline_raw)
+        if deadline:
+            update_task_field(task_id, "deadline", deadline)
+            update_task_status(task_id, "active")
+            if task.get("yougile_task_id"):
+                from yougile.client import YougileClient
+                try:
+                    from datetime import datetime as dt
+                    dt_obj = dt.strptime(deadline, "%Y-%m-%d %H:%M")
+                    ms = int(dt_obj.timestamp() * 1000)
+                    YougileClient().update_task(task["yougile_task_id"], deadline={"deadline": ms, "withTime": True})
+                except Exception:
+                    pass
+            await update.message.reply_text(
+                f"✅ Срок задачи #{task_id} изменён на {format_datetime_ru(deadline)}",
+                parse_mode="HTML",
+            )
+            return
+        else:
+            await update.message.reply_text(
+                "❌ Не удалось распознать дату. Попробуйте ещё раз, например: /reschedule 42 завтра 18:00",
+            )
+            return
+
+    context.user_data["reschedule_task_id"] = task_id
+    await update.message.reply_text(
+        f"📅 Напишите новый срок для задачи #{task_id} «{task['title']}»\n"
+        f"Например: <b>завтра в 18:00</b> или <b>15.07</b>",
+        parse_mode="HTML",
+    )
 
 
 async def _notify_approvers(context: ContextTypes.DEFAULT_TYPE, task: dict):
@@ -761,16 +856,65 @@ async def _notify_approvers(context: ContextTypes.DEFAULT_TYPE, task: dict):
 # ── Delete ───────────────────────────────────────────────
 
 async def delete_task_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        task_id = int(context.args[0])
-    except (IndexError, ValueError):
-        await update.message.reply_text(INVALID_ID)
+    if context.args:
+        try:
+            task_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text(INVALID_ID)
+            return
+        task = get_task(task_id)
+        if not task:
+            await update.message.reply_text(TASK_NOT_FOUND.format(id=task_id))
+            return
+        yid = task.get("yougile_task_id", "")
+        if yid:
+            try:
+                from yougile.client import YougileClient
+                YougileClient().delete_task(yid)
+            except Exception:
+                pass
+        delete_task(task_id)
+        await update.message.reply_text(TASK_DELETED.format(id=task_id))
         return
 
-    if delete_task(task_id):
+    context.user_data["awaiting_delete_id"] = True
+    await update.message.reply_text("🗑 Укажите ID задачи для удаления:")
+
+
+async def number_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_delete_id"):
+        try:
+            task_id = int(update.message.text.strip())
+        except ValueError:
+            return
+        task = get_task(task_id)
+        if not task:
+            await update.message.reply_text(TASK_NOT_FOUND.format(id=task_id))
+            return
+        context.user_data.pop("awaiting_delete_id", None)
+        yid = task.get("yougile_task_id", "")
+        if yid:
+            try:
+                from yougile.client import YougileClient
+                YougileClient().delete_task(yid)
+            except Exception:
+                pass
+        delete_task(task_id)
         await update.message.reply_text(TASK_DELETED.format(id=task_id))
-    else:
+        return
+
+    if not context.user_data.get("awaiting_done_id"):
+        return
+    try:
+        task_id = int(update.message.text.strip())
+    except ValueError:
+        return
+    task = get_task(task_id)
+    if not task:
         await update.message.reply_text(TASK_NOT_FOUND.format(id=task_id))
+        return
+    context.user_data.pop("awaiting_done_id", None)
+    await _request_done_approval(update, context, task)
 
 
 # ── Users management (admin) ─────────────────────────────
@@ -925,27 +1069,26 @@ async def done_natural(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _request_done_approval(update, context, task)
     else:
         lines = [f"#{t['id']} — {t['title']} (⏰ {t['deadline']})" for t in tasks]
-        await update.message.reply_text(
-            DONE_WHICH_TASK + "\n" + "\n".join(lines)
-        )
+        header = DONE_WHICH_TASK
+        max_len = 4000
+        chunks = []
+        current = header
+        for line in lines:
+            candidate = current + "\n" + line
+            if len(candidate) > max_len:
+                chunks.append(current)
+                current = line
+            else:
+                current = candidate
+        chunks.append(current)
+        for chunk in chunks:
+            await update.message.reply_text(chunk)
         context.user_data["awaiting_done_id"] = True
 
     return
 
 
-async def done_natural_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("awaiting_done_id"):
-        return
-    try:
-        task_id = int(update.message.text.strip())
-    except ValueError:
-        return
-    task = get_task(task_id)
-    if not task:
-        await update.message.reply_text(TASK_NOT_FOUND.format(id=task_id))
-        return
-    context.user_data.pop("awaiting_done_id", None)
-    await _request_done_approval(update, context, task)
+# Merged into number_handler
 
 
 async def _request_done_approval(update: Update, context: ContextTypes.DEFAULT_TYPE, task: dict):
@@ -966,6 +1109,45 @@ async def _request_done_approval(update: Update, context: ContextTypes.DEFAULT_T
 
 
 # ── Callback (buttons) ───────────────────────────────────
+
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    task_id = context.user_data.pop("reschedule_task_id", None)
+    if task_id:
+        deadline_raw = update.message.text.strip()
+        deadline = parse_deadline(deadline_raw)
+        if not deadline:
+            await update.message.reply_text(
+                "❌ Не удалось распознать дату. Попробуйте ещё раз, например: <b>завтра 18:00</b> или <b>15.07.2026</b>",
+                parse_mode="HTML",
+            )
+            context.user_data["reschedule_task_id"] = task_id
+            return
+        update_task_field(task_id, "deadline", deadline)
+        update_task_status(task_id, "active")
+        task = get_task(task_id)
+        if task and task.get("yougile_task_id"):
+            from yougile.client import YougileClient
+            try:
+                from datetime import datetime as dt
+                dt_obj = dt.strptime(deadline, "%Y-%m-%d %H:%M")
+                ms = int(dt_obj.timestamp() * 1000)
+                YougileClient().update_task(task["yougile_task_id"], deadline={"deadline": ms, "withTime": True})
+            except Exception:
+                pass
+        await update.message.reply_text(
+            f"✅ Срок задачи #{task_id} изменён на {format_datetime_ru(deadline)}",
+            parse_mode="HTML",
+        )
+        return
+
+    if context.user_data.get("awaiting_project_name"):
+        context.user_data.pop("awaiting_project_name", None)
+        name = update.message.text.strip()
+        if name:
+            await _create_project_internal(update, name)
+        return
+    await done_comment_handler(update, context)
+
 
 async def done_comment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     task_id = context.user_data.pop("awaiting_done_comment", None)
@@ -1042,6 +1224,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["awaiting_done_comment"] = task_id
             await query.message.reply_text(DONE_AWAITING_COMMENT)
 
+    elif data.startswith("reschedule_"):
+        task_id = int(data.split("_")[1])
+        task = get_task(task_id)
+        if not task:
+            await query.edit_message_text(TASK_NOT_FOUND.format(id=task_id))
+            return
+        context.user_data["reschedule_task_id"] = task_id
+        await query.edit_message_text(
+            f"📅 Напишите новый срок для задачи #{task_id} «{task['title']}»\n"
+            f"Например: <b>завтра в 18:00</b> или <b>15.07</b>",
+            parse_mode="HTML",
+        )
+        return
+
     elif data.startswith("approve_"):
         task_id = int(data.split("_")[1])
         task = get_task(task_id)
@@ -1086,10 +1282,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("delete_"):
         task_id = int(data.split("_")[1])
-        if delete_task(task_id):
-            await query.edit_message_text(TASK_DELETED.format(id=task_id))
-        else:
+        task = get_task(task_id)
+        if not task:
             await query.edit_message_text(TASK_NOT_FOUND.format(id=task_id))
+            return
+        yid = task.get("yougile_task_id", "")
+        if yid:
+            try:
+                from yougile.client import YougileClient
+                YougileClient().delete_task(yid)
+            except Exception:
+                pass
+        delete_task(task_id)
+        await query.edit_message_text(TASK_DELETED.format(id=task_id))
 
     # Menu buttons
     elif data == "menu_list":
@@ -1142,6 +1347,7 @@ def get_handlers():
         CommandHandler("list", list_tasks_handler),
         CommandHandler("done", done_task_handler),
         CommandHandler("delete", delete_task_handler),
+        CommandHandler("reschedule", reschedule_command),
         CommandHandler("overdue", overdue_handler),
         CommandHandler("pending", pending_handler),
         CommandHandler("users", users_handler),
@@ -1153,8 +1359,8 @@ def get_handlers():
         CommandHandler("create_project", create_project_handler),
         CommandHandler("link_email", link_email_handler),
         MessageHandler(filters.Regex(r"(?i)^(выполнено|сделано|готово)$") & ~filters.COMMAND, done_natural),
-        MessageHandler(filters.Regex(r"^\d+$") & ~filters.COMMAND, done_natural_number),
-        MessageHandler(filters.TEXT & ~filters.COMMAND, done_comment_handler),
+        MessageHandler(filters.Regex(r"^\d+$") & ~filters.COMMAND, number_handler),
+        MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler),
         MessageHandler(filters.PHOTO, done_comment_handler),
         MessageHandler(filters.Document.ALL, done_comment_handler),
         CallbackQueryHandler(button_callback),

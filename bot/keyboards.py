@@ -1,9 +1,10 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def task_actions_keyboard(task_id: int, status: str = "") -> InlineKeyboardMarkup:
+def task_actions_keyboard(task_id: int, status: str = "", *, viewer_id: int = 0, assignee_id: int = 0) -> InlineKeyboardMarkup:
     buttons = []
-    if status == "active":
+    can_take = status == "active" and viewer_id and viewer_id == assignee_id
+    if can_take:
         buttons.append(InlineKeyboardButton("▶️ Взять в работу", callback_data=f"take_{task_id}"))
     buttons.append(InlineKeyboardButton("✅ Выполнено", callback_data=f"done_{task_id}"))
     buttons.append(InlineKeyboardButton("🗑 Удалить", callback_data=f"delete_{task_id}"))
@@ -24,6 +25,15 @@ def done_actions_keyboard(task_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("💬 Комментарий", callback_data=f"done_comment_{task_id}"),
          InlineKeyboardButton("📎 Файл", callback_data=f"done_file_{task_id}")],
         [InlineKeyboardButton("📤 Отправить", callback_data=f"done_send_{task_id}")],
+    ])
+
+
+def overdue_keyboard(task_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Выполнено", callback_data=f"done_{task_id}"),
+            InlineKeyboardButton("📅 Изменить срок", callback_data=f"reschedule_{task_id}"),
+        ]
     ])
 
 

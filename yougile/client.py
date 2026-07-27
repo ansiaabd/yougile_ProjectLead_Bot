@@ -39,15 +39,31 @@ class YougileClient:
 
     # ── Projects ──
 
+    def _paginate(self, path: str) -> list[dict]:
+        items = []
+        offset = 0
+        limit = 100
+        while True:
+            data = self._request("GET", path, params={"limit": limit, "offset": offset})
+            batch = data.get("content", [])
+            if not batch:
+                break
+            items.extend(batch)
+            if len(batch) < limit:
+                break
+            offset += limit
+        return items
+
     def get_projects(self) -> list[dict]:
-        data = self._request("GET", "projects")
-        return data.get("content", [])
+        return self._paginate("projects")
+
+    def get_project(self, project_id: str) -> dict:
+        return self._request("GET", f"projects/{project_id}")
 
     # ── Boards ──
 
     def get_boards(self) -> list[dict]:
-        data = self._request("GET", "boards")
-        return data.get("content", [])
+        return self._paginate("boards")
 
     def get_boards_by_project(self, project_id: str) -> list[dict]:
         all_boards = self.get_boards()
@@ -56,8 +72,7 @@ class YougileClient:
     # ── Columns ──
 
     def get_columns(self, board_id: str) -> list[dict]:
-        data = self._request("GET", "columns")
-        all_cols = data.get("content", [])
+        all_cols = self._paginate("columns")
         return [c for c in all_cols if c.get("boardId") == board_id]
 
     def get_first_column(self, board_id: str) -> Optional[dict]:
@@ -84,6 +99,9 @@ class YougileClient:
 
     def delete_column(self, column_id: str):
         self._request("PUT", f"columns/{column_id}", {"deleted": True})
+
+    def delete_task(self, task_id: str):
+        self._request("DELETE", f"tasks/{task_id}")
 
     # ── Column mapping (single board with 4 columns) ──
 
@@ -119,8 +137,7 @@ class YougileClient:
     # ── Users ──
 
     def get_users(self) -> list[dict]:
-        data = self._request("GET", "users")
-        return data.get("content", [])
+        return self._paginate("users")
 
     # ── Tasks ──
 

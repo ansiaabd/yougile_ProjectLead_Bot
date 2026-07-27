@@ -5,20 +5,24 @@ Telegram-бот для управления задачами с ролями (а
 Интеграция с Yougile (https://ru.yougile.com) — двусторонняя синхронизация задач.
 
 ## Current State
-- Bot running with PID from start.sh
+- Bot deployed on VPS (Hostkey, vm.nano, 43.245.226.45)
+- Running as systemd service `taskbot`
 - All implemented features are stable
 - Yougile integration active
 
 ## How to start a new session
 
 1. Read this file first (AGENTS.md)
-2. Check if bot is running: `ps aux | grep "python main.py"`
-3. If not running, start with: `bash start.sh` (или `python main.py &`)
-4. Bot log is in bot.log in project root
+2. SSH: `ssh admino@43.245.226.45` (пароль в .env)
+3. Check bot: `sudo systemctl status taskbot`
+4. Logs: `sudo journalctl -u taskbot -f`
+5. Restart: `sudo systemctl restart taskbot`
+6. Bot works via polling — Telegram webhook не нужен
 
 ## Structure
 
 ```
+├── backup.sh            # Daily backup script
 ├── main.py              # Entry point (bot + webhook server)
 ├── config.py            # .env config
 ├── bot/
@@ -105,10 +109,10 @@ Telegram-бот для управления задачами с ролями (а
 | /help | All | Help |
 
 ## To start integration after first setup
-1. Run bot: `python main.py`
-2. In Telegram, run: `/setup_webhooks https://your-ngrok-url.ngrok-free.app`
+1. Bot already running as systemd service on VPS
+2. In Telegram, run: `/setup_webhooks http://43.245.226.45:8787`
 3. Bot now syncs bidirectionally with Yougile
 
 ## Known issues
 - Yougile file upload not yet implemented (only text comments)
-- Webhook server requires public URL (ngrok in dev)
+- Webhook server requires public URL (ngrok in dev) — for VPS: используй прямой IP

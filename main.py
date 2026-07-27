@@ -1,20 +1,30 @@
+import logging
+
 from telegram import BotCommand
 from telegram.ext import Application
+
+logging.basicConfig(
+    format="%(asctime)s %(name)s %(levelname)s: %(message)s",
+    level=logging.INFO,
+)
 
 from config import BOT_TOKEN
 from db.crud import init_db
 from bot.handlers import get_handlers
 from scheduler.tasks import check_overdue
 from yougile.config import YOUGILE_API_KEY
-from yougile.webhook import WebhookServer, set_app
+from yougile.webhook import WebhookServer, set_app, set_loop, check_pending_yougile_tasks
 
 
 async def _post_init(app: Application):
+    import asyncio
+    set_loop(asyncio.get_running_loop())
     commands = [
         BotCommand("add", "Добавить задачу"),
         BotCommand("list", "Мои активные задачи"),
         BotCommand("done", "Отметить выполненной"),
         BotCommand("delete", "Удалить задачу"),
+        BotCommand("reschedule", "Изменить срок задачи"),
         BotCommand("overdue", "Просроченные задачи"),
         BotCommand("pending", "На подтверждении"),
         BotCommand("take", "Взять задачу в работу"),
@@ -47,6 +57,15 @@ def main():
         webhook_server = WebhookServer()
         webhook_server.start()
         print("🌐 Yougile webhook server started on :8787", flush=True)
+
+        # Process any pending Yougile tasks created while bot was down
+        check_pending_yougile_tasks()
+        async def _check_pending(ctx):
+            check_pending_yougile_tasks()
+        app.job_queue.run_repeating(
+            _check_pending,
+            interval=60, first=30,
+        )
     else:
         print("ℹ️  Yougile API key not set — webhook server disabled", flush=True)
 

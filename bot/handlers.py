@@ -698,6 +698,9 @@ async def list_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         tasks = list_tasks(include_done=False, user_id=user_id, role=role)
 
+    if role == "admin":
+        tasks = [t for t in tasks if t.get("assignee_id") not in SILENT_USERS]
+
     if not tasks:
         await update.message.reply_text(NO_TASKS)
         return
@@ -1040,6 +1043,8 @@ async def pending_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(MODERATOR_ONLY)
         return
     tasks = list_pending_approval(user_id=user_id, role=role)
+    if role == "admin":
+        tasks = [t for t in tasks if t.get("assignee_id") not in SILENT_USERS]
     if not tasks:
         await update.message.reply_text(NO_PENDING)
         return

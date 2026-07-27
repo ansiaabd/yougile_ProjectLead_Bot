@@ -14,7 +14,7 @@ from yougile.config import YOUGILE_WEBHOOK_SECRET
 from yougile.client import YougileClient
 from db.crud import get_task_by_yougile_id, add_task, get_user_by_yougile_id, update_task_field, update_task_status
 from utils.date_parser import format_datetime_ru
-from config import ADMIN_ID
+from config import ADMIN_ID, SILENT_USERS
 
 def _strip_html(text: str) -> str:
     """Remove HTML tags and unescape entities."""
@@ -68,10 +68,13 @@ def notify_chat(chat_id: int, text: str, task_id: int = 0, *, viewer_id: int = 0
 
 
 def _notify_all(text: str, *chat_ids: int, task_id: int = 0, assignee_id: int = 0):
-    """Notify multiple recipients, deduplicating by chat_id."""
+    """Notify multiple recipients, deduplicating by chat_id.
+    Skips admin notification when task belongs to a silent user."""
     seen = set()
     for cid in chat_ids:
         if cid and cid not in seen:
+            if cid == ADMIN_ID and assignee_id in SILENT_USERS:
+                continue
             seen.add(cid)
             notify_chat(cid, text, task_id=task_id, viewer_id=cid, assignee_id=assignee_id)
 
@@ -338,7 +341,9 @@ def _process_delayed_task(task_id: str):
         f"{desc_text}"
     ).strip()
 
-    targets = {tg_assignee_id, ADMIN_ID}
+    targets = {tg_assignee_id}
+    if tg_assignee_id not in SILENT_USERS:
+        targets.add(ADMIN_ID)
     if tg_author_id and tg_author_id != tg_assignee_id and tg_author_id != ADMIN_ID:
         targets.add(tg_author_id)
     for tid in targets:

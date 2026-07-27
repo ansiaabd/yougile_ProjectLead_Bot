@@ -8,6 +8,9 @@ ADMIN_ID: int = int(os.getenv("ADMIN_ID", "0"))
 DB_PATH: str = os.getenv("DB_PATH", "tasks.db")
 CALENDAR_TYPE: str = os.getenv("CALENDAR_TYPE", "")  # "google" or "outlook"
 
+# Users whose tasks should not trigger admin notifications
+SILENT_USERS: set[int] = {960581096}  # Софья Чистова | SEO
+
 # Yougile
 YOUGILE_COMPANY_ID: str = os.getenv("YOUGILE_COMPANY_ID", "")
 YOUGILE_API_KEY: str = os.getenv("YOUGILE_API_KEY", "")

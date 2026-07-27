@@ -34,7 +34,7 @@ from bot.messages import (
 )
 from bot.keyboards import task_actions_keyboard, approval_keyboard, user_picker_keyboard, menu_keyboard, project_picker_keyboard
 from utils.date_parser import parse_deadline, format_datetime_ru
-from config import ADMIN_ID
+from config import ADMIN_ID, SILENT_USERS
 from yougile.client import YougileClient, YougileError
 
 yougile = YougileClient()
@@ -846,7 +846,8 @@ async def _notify_approvers(context: ContextTypes.DEFAULT_TYPE, task: dict):
         except Exception:
             pass
 
-    if ADMIN_ID not in notified:
+    assignee_id = task.get("assignee_id")
+    if ADMIN_ID not in notified and assignee_id not in SILENT_USERS:
         try:
             await _send(ADMIN_ID)
         except Exception:

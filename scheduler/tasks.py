@@ -4,7 +4,7 @@ from datetime import datetime
 from telegram.ext import ContextTypes
 from telegram import InlineKeyboardMarkup
 from db.crud import get_connection, update_task_field, update_task_status
-from config import ADMIN_ID
+from config import ADMIN_ID, SILENT_USERS
 from bot.keyboards import overdue_keyboard
 
 logger = logging.getLogger(__name__)
@@ -32,13 +32,14 @@ async def check_overdue(context: ContextTypes.DEFAULT_TYPE):
         )
         kb = overdue_keyboard(task["id"])
 
-        try:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID, text=text, parse_mode="HTML",
-                reply_markup=kb,
-            )
-        except Exception as e:
-            logger.warning("Failed to notify admin: %s", e)
+        if task.get("assignee_id") not in SILENT_USERS:
+            try:
+                await context.bot.send_message(
+                    chat_id=ADMIN_ID, text=text, parse_mode="HTML",
+                    reply_markup=kb,
+                )
+            except Exception as e:
+                logger.warning("Failed to notify admin: %s", e)
 
         if task.get("assignee_id"):
             try:
@@ -77,9 +78,13 @@ async def send_overdue_notifications(app, chat_id: int = 0):
             f"Пожалуйста, измените срок задачи или закройте её как выполненную."
         )
         kb = overdue_keyboard(task["id"])
-        recipients = {ADMIN_ID}
+        recipients = set()
         if task.get("assignee_id"):
             recipients.add(task["assignee_id"])
+            if task["assignee_id"] not in SILENT_USERS:
+                recipients.add(ADMIN_ID)
+        else:
+            recipients.add(ADMIN_ID)
         for cid in recipients:
             if chat_id and cid != chat_id:
                 continue

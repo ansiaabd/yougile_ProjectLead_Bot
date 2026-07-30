@@ -1,5 +1,6 @@
 import sqlite3
 from typing import Optional
+from config import SILENT_USERS
 from db import get_connection
 
 SCHEMA_PATH = "db/schema.sql"
@@ -201,7 +202,10 @@ def list_tasks(include_done: bool = False, user_id: Optional[int] = None, role: 
                 (user_id,),
             ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    rows = [dict(r) for r in rows]
+    if user_id is None or role == "admin":
+        rows = [r for r in rows if r.get("assignee_id") not in SILENT_USERS]
+    return rows
 
 
 def update_task_status(task_id: int, status: str) -> bool:
@@ -255,7 +259,10 @@ def list_overdue(user_id: Optional[int] = None, role: str = "user") -> list[dict
             (user_id,),
         ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    rows = [dict(r) for r in rows]
+    if user_id is None or role == "admin":
+        rows = [r for r in rows if r.get("assignee_id") not in SILENT_USERS]
+    return rows
 
 
 def list_pending_approval(user_id: Optional[int] = None, role: str = "admin") -> list[dict]:
@@ -272,7 +279,10 @@ def list_pending_approval(user_id: Optional[int] = None, role: str = "admin") ->
     else:
         rows = conn.execute("SELECT * FROM tasks WHERE 0").fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    rows = [dict(r) for r in rows]
+    if role == "admin" or user_id is None:
+        rows = [r for r in rows if r.get("assignee_id") not in SILENT_USERS]
+    return rows
 
 
 def get_task_by_yougile_id(yougile_task_id: str) -> Optional[dict]:

@@ -34,7 +34,7 @@ from bot.messages import (
 )
 from bot.keyboards import task_actions_keyboard, approval_keyboard, user_picker_keyboard, menu_keyboard, project_picker_keyboard
 from utils.date_parser import parse_deadline, format_datetime_ru
-from config import ADMIN_ID, SILENT_USERS
+from config import ADMIN_ID
 from yougile.client import YougileClient, YougileError
 
 yougile = YougileClient()
@@ -698,9 +698,6 @@ async def list_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         tasks = list_tasks(include_done=False, user_id=user_id, role=role)
 
-    if role == "admin":
-        tasks = [t for t in tasks if t.get("assignee_id") not in SILENT_USERS]
-
     if not tasks:
         await update.message.reply_text(NO_TASKS)
         return
@@ -850,7 +847,7 @@ async def _notify_approvers(context: ContextTypes.DEFAULT_TYPE, task: dict):
             pass
 
     assignee_id = task.get("assignee_id")
-    if ADMIN_ID not in notified and assignee_id not in SILENT_USERS:
+    if ADMIN_ID not in notified:
         try:
             await _send(ADMIN_ID)
         except Exception:
@@ -1022,8 +1019,6 @@ async def overdue_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = _get_role(user_id)
     tasks = list_overdue(user_id=None if role == "admin" else user_id, role=role)
-    if role == "admin":
-        tasks = [t for t in tasks if t.get("assignee_id") not in SILENT_USERS]
     if not tasks:
         await update.message.reply_text(NO_OVERDUE)
         return
@@ -1045,8 +1040,6 @@ async def pending_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(MODERATOR_ONLY)
         return
     tasks = list_pending_approval(user_id=user_id, role=role)
-    if role == "admin":
-        tasks = [t for t in tasks if t.get("assignee_id") not in SILENT_USERS]
     if not tasks:
         await update.message.reply_text(NO_PENDING)
         return

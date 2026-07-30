@@ -176,7 +176,7 @@ def list_tasks(include_done: bool = False, user_id: Optional[int] = None, role: 
             rows = conn.execute("SELECT * FROM tasks ORDER BY deadline").fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM tasks WHERE status != 'done' ORDER BY deadline"
+                "SELECT * FROM tasks WHERE status NOT IN ('done', 'pending_approval') ORDER BY deadline"
             ).fetchall()
     elif role == "moderator":
         if include_done:
@@ -186,7 +186,7 @@ def list_tasks(include_done: bool = False, user_id: Optional[int] = None, role: 
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM tasks WHERE status != 'done' AND (assignee_id = ? OR created_by = ?) ORDER BY deadline",
+                "SELECT * FROM tasks WHERE status NOT IN ('done', 'pending_approval') AND (assignee_id = ? OR created_by = ?) ORDER BY deadline",
                 (user_id, user_id),
             ).fetchall()
     else:
@@ -197,7 +197,7 @@ def list_tasks(include_done: bool = False, user_id: Optional[int] = None, role: 
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM tasks WHERE assignee_id = ? AND status != 'done' ORDER BY deadline",
+                "SELECT * FROM tasks WHERE assignee_id = ? AND status NOT IN ('done', 'pending_approval') ORDER BY deadline",
                 (user_id,),
             ).fetchall()
     conn.close()

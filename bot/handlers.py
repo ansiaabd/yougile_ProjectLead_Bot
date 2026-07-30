@@ -1022,6 +1022,8 @@ async def overdue_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = _get_role(user_id)
     tasks = list_overdue(user_id=None if role == "admin" else user_id, role=role)
+    if role == "admin":
+        tasks = [t for t in tasks if t.get("assignee_id") not in SILENT_USERS]
     if not tasks:
         await update.message.reply_text(NO_OVERDUE)
         return

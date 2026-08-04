@@ -373,12 +373,12 @@ async def _finish_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Create task in Yougile
     yougile_task_id = ""
+    assignee_warning = ""
     if yougile_project_id:
         try:
             # Ensure columns exist before creating task
             yougile.ensure_project_columns(yougile_project_id)
             assigned_ids = []
-            assignee_warning = ""
             if assignee_id:
                 yid = get_yougile_user_id(assignee_id)
                 if yid:
